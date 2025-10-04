@@ -7,7 +7,7 @@ from array import array
 
 parser = OptionParser()
 #These are the main options that should be changed
-parser.add_option("--input_profile", default="/afs/cern.ch/user/s/singhsh/PixelMonitoring/data/radiation_simulation/profiles/per_year/BPix_BmI_SEC1_LYR1/profile_BPix_BmI_SEC1_LYR1_2022.txt", help="Input profile file name, should have been made using PixelMonitoring repository")
+parser.add_option("--input_profile", default="/afs/cern.ch/user/s/singhsh/PixelMonitoring/data/radiation_simulation/profiles/per_phase/BPix_BmI_SEC1_LYR1/profile_BPix_BmI_SEC1_LYR1_phase1.txt", help="Input profile file name, should have been made using PixelMonitoring repository")
 parser.add_option("--inputAnnealingConstants", default="config/annealing_constants.py", help="Input annealing constants file name")
 parser.add_option("--output_root_file", default="testFile.root", help="Output ROOT file name")
 # These are options that shoudlb e changed if you are using different sensors etc.
@@ -215,6 +215,7 @@ class Sensor:
         self.leakage_current_per_volume = [];
         self.alpha_vec = [];
         self.powerconsumption = [];
+        self.average_current_vector = []
 
         self.N_benef_anneal_g1_vec = [];
         self.N_revers_anneal_g1_vec = [];
@@ -415,8 +416,11 @@ class Sensor:
     self.alpha1_contribution_vector.append(profile.duration *tauInverse)
 
     # Equations taken from page 5 of https://cds.cern.ch/record/2773267
-    self.Theta_vector.append(math.exp(-self.leakageCurrentConstants.E1_star/self.boltzmanConstant * (1.0 / float(int(profile.temperature)) - 1.0/self.Tref) ))
-
+    #self.Theta_vector.append(math.exp(-self.leakageCurrentConstants.E1_star/self.boltzmanConstant * (1.0 / float(int(profile.temperature)) - 1.0/self.Tref) ))
+    #self.Theta_vector.append(math.exp(-opt.bandGap/self.boltzmanConstant * (1.0 / float(int(profile.temperature)) - 1.0/self.Tref) ))
+    self.Theta_vector.append(math.exp(-opt.bandGap/self.boltzmanConstant * (1.0 / profile.temperature - 1.0/self.Tref) ))
+    print("Theta_vector:", self.Theta_vector[0], self.Theta_vector[-1])
+    print(self.leakageCurrentConstants.E1_star, self.boltzmanConstant, float(int(profile.temperature)), self.Tref)
     # Equation 3.2 of https://iopscience.iop.org/article/10.1088/1748-0221/14/06/P06012/pdf, t0 is one minute = 60 seconds
     # The individual term in the sum over Theta(T_j)*t_j / t0
     self.beta_contribution_vector.append(self.Theta_vector[-1] * profile.duration / self.t0)
@@ -472,6 +476,10 @@ class Sensor:
 def leakageCurrentScale(leakageCurrent, T, Tref, bandGap):
     # Taken from equation 25 of https://cds.cern.ch/record/2773267
     return leakageCurrent*(T*T/(Tref*Tref)*math.exp(-(bandGap/(2*boltzmanConstant))*(1/T - 1/Tref)));
+def get_average_current(self):
+    if not self.leakage_current:
+        return 0.0
+    return sum(self.leakage_current) / len(self.leakage_current)
 
 # An array of DataElements that contain the conditions at each time step
 def getProfile(filename, sensor):
@@ -485,6 +493,8 @@ def getProfile(filename, sensor):
       #Ignoring the first line of the file, which just has some extra info
       if index == 0: 
         continue
+      if index > 10:
+        break
       words = line.split()
       fill = int(words[0])
       print(f"Index: {index}, Fill: {fill}")
@@ -498,9 +508,11 @@ def getProfile(filename, sensor):
       profileSnapshot.fill = fill;
       profileSnapshot.timestamp = timestamp;
       profileSnapshot.duration = timestep;
+      print("i=%d, fill=%d,T=%f, t=%d, doseRate=%f"%(index, fill, temperature, timestep, doseRate*sensor.DoseRateScaling))
       if(timestep < 0):
         print("The timestep is negative, which should not happen. Check your inputs")
-        print(line)
+        #print(line)
+
         profileSnapshot.duration = 0.001
       profileSnapshot.doseRate = doseRate * sensor.DoseRateScaling;
       profileSnapshot.temperature = temperature;   #Add 3 degree?????????????????

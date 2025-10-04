@@ -61,6 +61,7 @@ def leakageCurrentScale(leakageCurrent, T, Tref, bandGap):
     return leakageCurrent*(((Tref*Tref)/(T*T))*math.exp(-(bandGap/(2*boltzmanConstant))*(1/T - 1/Tref)));
 
 def theta(T,Tref, Ei):
+    print(Ei, boltzmanConstant, T, Tref)
     return math.exp(-Ei / boltzmanConstant * (1. / T - 1. / Tref))
 
 
@@ -163,35 +164,57 @@ class Sensor:
 
       cumulative_theta = 0.0
       totalDose = 0.0
-      
+    
+      for j in range(len(self.duration_vector)):
+        T_j = self.temperature_vector[j]
+        t_j = self.duration_vector[j] 
+        theta_j = theta(T_j, Tref, Ei)
+        if theta_j == 0:
+            theta_j = 1e-12
+            print(f"Too low value for cumulative_theta: j={j}, T={T}, t={t}, doseRate={doseRate}, theta_j={theta_j}")
+        cumulative_theta += theta_j * t_j
+        print(cumulative_theta)
+        
       for i in range(len(self.duration_vector)):
-          T = self.temperature_vector[i]
-          t = self.duration_vector[i]
+          T_i = self.temperature_vector[i]
+          t_i = self.duration_vector[i] 
           doseRate = self.doseRate_vector[i]
+          totalDose += doseRate * t_i  
 
+          theta_i = theta(T_i, Tref, Ei)
+          if theta_i == 0:
+              theta_i = 1e-12
+              print(f"Too low value for cumulative_theta: i={i}, T={T}, t={t}, doseRate={doseRate}, theta_i={theta_i}")
           
-          theta_j = theta(T, Tref, Ei)
-          if theta_j == 0:
-              theta_j = 1e-12
-          cumulative_theta += theta_j * t
-          totalDose += doseRate * t  
-          print(f"i={i}, T={T}, t={t}, doseRate={doseRate}, theta_j={theta_j}")
-
           total_alpha = 0.0
           alpha_k_list = []
+
+          cumulative_theta = 0.0
+          #for j in range(i, len(self.duration_vector)):
+          for j in range(len(self.duration_vector)):
+            T_j = self.temperature_vector[j]
+            t_j = self.duration_vector[j] 
+            theta_j = theta(T_j, Tref, Ei)
+            if theta_j == 0:
+                theta_j = 1e-12
+                print(f"Too low value for cumulative_theta: j={j}, T={T}, t={t}, doseRate={doseRate}, theta_j={theta_j}")
+            cumulative_theta += theta_j * t_j
+            print(cumulative_theta)
 
           for k in range(5):
               tau_k = tauk[k]
               A_k = Ak[k]
 
               # Eq. 24 
-              prefactor = alpha_Tref * (A_k * tau_k) / (theta_j * t)
-              decay = 1 - math.exp(-theta_j * t / tau_k)
+              prefactor = alpha_Tref * (A_k * tau_k) / (theta_i * t_i)
+              decay = 1 - math.exp(-theta_i * t_i / tau_k)
               annealing_decay = math.exp(-cumulative_theta / tau_k)
+              
 
               alpha_k = prefactor * decay * annealing_decay
               total_alpha += alpha_k
               alpha_k_list.append(alpha_k)
+              print("alpha info", k, prefactor, decay, annealing_decay, t, t_i, cumulative_theta, theta_i, alpha_Tref)
 
           
           self.alpha1_vector.append(alpha_k_list[0])
@@ -204,12 +227,13 @@ class Sensor:
           # Leakage current
           fluence_i = totalDose
           Ileak = total_alpha * fluence_i * self.volume
-
+     #     cumulative_theta += theta_i * t_i
+          print(total_alpha, fluence_i, self.volume)
       
           self.leakage_current.append(Ileak)
           self.leakage_current_per_module.append(self.getPerModule(Ileak))
           self.leakage_current_per_volume.append(self.getPerVolume(Ileak))
-          self.leakage_current_Tref.append(leakageCurrentScale(Ileak, T, Tref, opt.bandGap))
+          self.leakage_current_Tref.append(leakageCurrentScale(Ileak, T_i, Tref, opt.bandGap))
 
 
 # An array of DataElements that contain the conditions at each time step
@@ -313,9 +337,16 @@ sensor = Sensor(leakageCurrentConstants, thickness=opt.sensorThickness, width=op
 # iterate through the profile and irradiate the sensor at each step
 profile = getProfile(opt.input_profile, sensor);
 print("Profile succesfully read. Length of the profile is: ", len(profile))
-for t in range(len(profile)):
+#for t in range(len(profile)):
+for t in range(10):
     sensor.irradiate(profile[t])
 sensor.compute_alpha_sheffield()
+print(sensor.leakage_current[0:10])
+print(sensor.leakage_current_per_volume[0:10])
+print(sensor.leakage_current_per_module[0:10])
+print(sensor.leakageCurrentData[0:10])
+print(sensor.fluence_vector_data[0:10])
+print(sensor.fluence_vector[0:10])
 #data output, plotting and visualisation
 print("Processing finished, writing data...")
 
